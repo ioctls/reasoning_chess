@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chess Gym</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E♞%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">♞ Chess Gym</div>
+  <nav class="tabs">
+    <button data-tab="play" class="on">Play</button>
+    <button data-tab="drills">Drills</button>
+    <button data-tab="style">Style</button>
+  </nav>
+  <button id="btn-settings" class="icon" aria-label="Settings">⚙</button>
+</header>
+
+<main>
+  <section id="view-board">
+    <div id="model-banner" class="banner" hidden></div>
+    <div class="board-row">
+      <div id="evalbar" title="Your winning chances"><div id="evalfill"></div><span id="evaltext"></span></div>
+      <div id="board"></div>
+    </div>
+    <div class="layers" id="layers">
+      <button data-layer="threats" class="chip c-threat">Threats</button>
+      <button data-layer="control" class="chip c-control">Control</button>
+      <button data-layer="plan" class="chip c-plan">Engine plan</button>
+      <button data-layer="humans" class="chip c-human">Humans</button>
+    </div>
+    <div class="controls" id="controls">
+      <button id="btn-hint">💡 Hint</button>
+      <button id="btn-undo">↶ Take back</button>
+      <button id="btn-new">New game</button>
+    </div>
+    <div id="coach"></div>
+    <div id="moves" class="movelist"></div>
+  </section>
+
+  <section id="view-style" hidden></section>
+</main>
+
+<dialog id="settings">
+  <form method="dialog" class="settings">
+    <h2>Settings</h2>
+    <label>Your rating (for "players at your level")
+      <select id="set-myelo"></select></label>
+    <label>Opponent rating (Maia plays like this)
+      <select id="set-oppelo"></select></label>
+    <label>Play as
+      <select id="set-color"><option value="w">White</option><option value="b">Black</option><option value="r">Random</option></select></label>
+    <label>Engine depth (higher = slower, stronger)
+      <select id="set-depth"><option>10</option><option>12</option><option>14</option><option>16</option></select></label>
+    <label class="row"><input type="checkbox" id="set-quiz"> Threat check before each of my moves</label>
+    <div class="model-box">
+      <div><b>Human model:</b> <span id="model-status">not loaded</span></div>
+      <div class="row-btns">
+        <button type="button" id="btn-model-dl">Download Maia-3 (11 MB)</button>
+        <label class="filebtn">Load .onnx file<input type="file" id="model-file" accept=".onnx"></label>
+      </div>
+      <input id="set-modelurl" type="url" spellcheck="false">
+      <small>Downloaded once, then cached on this device for offline use. Maia-3 by CSSLab (AGPL-3.0).</small>
+    </div>
+    <div class="row-btns end"><button value="close" class="primary">Done</button></div>
+  </form>
+</dialog>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
