@@ -33,6 +33,12 @@ jobs:
           name: chess-gym-apk
           path: chess-gym.apk
 
+      # Keep the "latest" tag pointing at the commit this APK was built from.
+      - name: Move latest tag
+        run: |
+          git tag -f latest
+          git push -f origin refs/tags/latest
+
       # A stable download link for your phone: Releases -> "latest" -> chess-gym.apk
       - uses: softprops/action-gh-release@v2
         with:
