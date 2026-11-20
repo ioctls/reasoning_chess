@@ -87,3 +87,26 @@ dialog::backdrop { background: rgba(0,0,0,.55); }
 .model-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 6px; font-size: 14px; }
 .filebtn { display: inline-flex !important; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; color: var(--text) !important; cursor: pointer; font-size: 15px !important; }
 .filebtn input { display: none; }
+
+/* Motion: things that are new fade in; things that didn't change stay still. */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cardIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fadeIn .25s ease-out; }
+.card-in { animation: cardIn .3s ease-out; }
+@media (prefers-reduced-motion: reduce) { .fade-in, .card-in { animation: none; } }
+
+/* Replay controls */
+.nav { flex: 0 0 auto !important; min-width: 44px; font-size: 18px !important; }
+.history-bar { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: -2px 0 8px; }
+.history-bar b { color: var(--text); }
+.history-bar button { padding: 4px 10px; font-size: 13px; }
+.movelist span.ply { cursor: pointer; padding: 1px 3px; border-radius: 4px; }
+.movelist span.ply.cur { background: var(--panel2); color: var(--text); outline: 1px solid var(--line); }
+
+/* Issues */
+.issues { display: grid; gap: 8px; }
+.issue { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; text-align: left; padding: 10px 12px; }
+.issue .n { font-size: 20px; font-weight: 700; grid-row: span 2; }
+.issue .t { font-weight: 600; }
+.issue .d { font-size: 12px; color: var(--muted); }
+.tag.issue-tag { background: color-mix(in srgb, var(--meh) 22%, transparent); color: #fcd34d; }

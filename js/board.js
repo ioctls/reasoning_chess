@@ -15,6 +15,8 @@ export class Board {
     this.selected = null;
     this.targets = [];
     this.overlays = {};
+    this.prevArrows = new Set();
+    this.prevBoard = null;
     this.svg = document.createElementNS(NS, 'svg');
     this.svg.setAttribute('viewBox', '0 0 800 800');
     this.svg.classList.add('board-svg');
@@ -79,12 +81,14 @@ export class Board {
     }
 
     // Pieces
+    const imgs = new Array(64);
     for (let i = 0; i < 64; i++) {
       const p = board[i];
       if (!p) continue;
       const [x, y] = this.xy(i);
-      g('image', { href: PIECES[p.c + p.t], x: x + 2, y: y + 2, width: S - 4, height: S - 4 });
+      imgs[i] = g('image', { href: PIECES[p.c + p.t], x: x + 2, y: y + 2, width: S - 4, height: S - 4 });
     }
+    this.animatePieces(g, board, imgs);
     // Rings (e.g. loose pieces)
     for (const r of ov.rings || []) {
       const [cx, cy] = this.center(r.sq);
@@ -97,11 +101,73 @@ export class Board {
       if (occupied) g('circle', { cx, cy, r: S * 0.44, fill: 'none', stroke: 'rgba(0,0,0,.28)', 'stroke-width': 8 });
       else g('circle', { cx, cy, r: S * 0.15, fill: 'rgba(0,0,0,.28)' });
     }
-    // Arrows on top
-    for (const a of ov.arrows || []) this.arrow(g, a);
+    // Arrows on top. Only arrows that weren't there last time fade in, so nothing flickers.
+    const seen = new Set();
+    for (const a of ov.arrows || []) {
+      const key = `${a.from}${a.to}${a.color}${a.label ?? ''}`;
+      seen.add(key);
+      this.arrow(g, a, !this.prevArrows.has(key));
+    }
+    this.prevArrows = seen;
   }
 
-  arrow(g, { from, to, color, width = 16, label, dashed, opacity = 0.85 }) {
+  /**
+   * Slide pieces from where they were to where they are now.
+   * Works by diffing the two positions, so it also handles castling, en passant,
+   * promotions and jumping back/forward through the game.
+   */
+  animatePieces(g, board, imgs) {
+    const prev = this.prevBoard;
+    const prevOrient = this.prevOrientation;
+    this.prevBoard = board;
+    this.prevOrientation = this.orientation;
+    const now = performance.now();
+    // The board is redrawn often (e.g. when analysis arrives). Carry on any slide that's
+    // still in flight instead of snapping the piece to its square.
+    this.active = (this.active || []).filter((a) => now - a.t0 < a.dur && board[a.to]);
+    for (const a of this.active) {
+      const el = imgs[a.to];
+      if (!el) continue;
+      el.parentNode.appendChild(el);
+      el.animate([{ transform: `translate(${a.dx}px, ${a.dy}px)` }, { transform: 'translate(0,0)' }], { duration: a.dur, delay: -(now - a.t0), easing: 'cubic-bezier(.2,.7,.2,1)' });
+    }
+    if (!prev || prevOrient !== this.orientation || this.instant) return;
+    const same = (a, b) => a && b && a.c === b.c && a.t === b.t;
+    const arrivals = [], departures = [];
+    for (let i = 0; i < 64; i++) {
+      if (board[i] && !same(board[i], prev[i])) arrivals.push(i);
+      if (prev[i] && !same(prev[i], board[i])) departures.push(i);
+    }
+    if (!arrivals.length || arrivals.length > 4) return; // nothing moved, or a jump too big to follow
+    const used = new Set();
+    const dist = (a, b) => Math.hypot((a % 8) - (b % 8), Math.floor(a / 8) - Math.floor(b / 8));
+    const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const dur = reduce ? 0 : 280;
+    for (const to of arrivals) {
+      const p = board[to];
+      let from = departures.filter((d) => !used.has(d) && same(prev[d], p)).sort((a, b) => dist(a, to) - dist(b, to))[0];
+      if (from == null) from = departures.find((d) => !used.has(d) && prev[d].c === p.c && prev[d].t === 'p'); // promotion
+      if (from == null) continue;
+      used.add(from);
+      const [x0, y0] = this.xy(from), [x1, y1] = this.xy(to);
+      const el = imgs[to];
+      el.parentNode.appendChild(el); // moving piece on top
+      if (dur) {
+        el.animate([{ transform: `translate(${x0 - x1}px, ${y0 - y1}px)` }, { transform: 'translate(0,0)' }], { duration: dur, easing: 'cubic-bezier(.2,.7,.2,1)' });
+        this.active.push({ to, dx: x0 - x1, dy: y0 - y1, t0: now, dur });
+      }
+    }
+    // Captured pieces fade out where they stood.
+    for (const d of departures) {
+      if (used.has(d) || !dur) continue;
+      const [x, y] = this.xy(d);
+      const ghost = g('image', { href: PIECES[prev[d].c + prev[d].t], x: x + 2, y: y + 2, width: S - 4, height: S - 4 });
+      ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur, fill: 'forwards' });
+      setTimeout(() => ghost.remove(), dur + 20);
+    }
+  }
+
+  arrow(g, { from, to, color, width = 16, label, dashed, opacity = 0.85 }, fadeIn = false) {
     const [x1, y1] = this.center(from), [x2, y2] = this.center(to);
     const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
     if (!len) return;
@@ -110,7 +176,7 @@ export class Board {
     const sx = x1 + ux * 18, sy = y1 + uy * 18;
     const ex = x2 - ux * 12, ey = y2 - uy * 12;
     const bx = ex - ux * head, by = ey - uy * head;
-    const grp = g('g', { opacity });
+    const grp = g('g', { opacity, class: fadeIn ? 'fade-in' : '' });
     g('line', { x1: sx, y1: sy, x2: bx, y2: by, stroke: color, 'stroke-width': width, 'stroke-linecap': 'round', 'stroke-dasharray': dashed ? `${width * 1.4} ${width}` : '' }, grp);
     g('polygon', { points: `${ex},${ey} ${bx + px * hw},${by + py * hw} ${bx - px * hw},${by - py * hw}`, fill: color }, grp);
     if (label != null) {

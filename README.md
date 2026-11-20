@@ -15,7 +15,9 @@ A chess trainer for building intuition, not memorizing openings. Everything runs
 | 👁 Idea preview | Step through the engine's line move by move, with numbered arrows and a note on what each move attacks. |
 | Hint ladder | 4 steps: scan forcing moves → which piece → which idea → the move. |
 | Layers | Threats (your loose pieces), Control (who owns each square), Engine plan, Humans (Maia's top moves). |
-| Drills | Your own mistakes come back on a spaced schedule (Leitner boxes). |
+| Replay | ◀ ▶ (or arrow keys, or tap a move) to step back through the game. Each of your moves keeps its review. |
+| Issues | Every costly move gets one label: left a piece hanging, missed their threat, king safety, missed a tactic, missed free material, positional slip. |
+| Drills | Pick an issue and practise only that. Your mistakes come back on a spaced schedule (Leitner boxes). |
 | Style | You vs. the best move on forcing/threat/king pressure/trades/pawn moves, blind spots, and "who you play like" (Maia likelihood across ratings). |
 
 ## Run locally

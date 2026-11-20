@@ -1,4 +1,5 @@
 // Your play-style profile and mistake drills, stored on this device (localStorage).
+import { ISSUES, issueOfDrill } from './issues.js';
 
 const KEY = 'chessgym.profile.v1';
 export const ELO_GRID = [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400];
@@ -77,9 +78,26 @@ export function addDrill(p, d) {
   if (p.drills.length > 200) p.drills.shift();
 }
 
-export function dueDrills(p) {
+export function dueDrills(p, issue = null) {
   const now = Date.now();
-  return p.drills.filter((d) => d.due <= now).sort((a, b) => a.box - b.box || a.due - b.due);
+  return p.drills.filter((d) => d.due <= now && (!issue || issueOfDrill(d) === issue)).sort((a, b) => a.box - b.box || a.due - b.due);
+}
+
+/** Practice queue for one issue: due ones first, then the rest (practising early is fine). */
+export function drillQueue(p, issue = null) {
+  const now = Date.now();
+  return p.drills
+    .filter((d) => !issue || issueOfDrill(d) === issue)
+    .sort((a, b) => (a.due <= now ? 0 : 1) - (b.due <= now ? 0 : 1) || a.box - b.box || a.due - b.due);
+}
+
+/** Counts per issue: how many drills, how many due, and how often it happened in games. */
+export function issueSummary(p) {
+  const now = Date.now();
+  const out = Object.fromEntries(Object.keys(ISSUES).map((k) => [k, { key: k, ...ISSUES[k], drills: 0, due: 0, games: 0 }]));
+  for (const d of p.drills) { const k = issueOfDrill(d); out[k].drills++; if (d.due <= now) out[k].due++; }
+  for (const m of p.moves) if (m.issue && out[m.issue]) out[m.issue].games++;
+  return Object.values(out).sort((a, b) => b.games - a.games || b.drills - a.drills);
 }
 
 /** Leitner-style spacing: right answers push the card out 1, 3, 7, 15... days. */
