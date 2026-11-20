@@ -115,14 +115,51 @@ export function nullMoveFen(fen) {
   } catch { return null; }
 }
 
+/** Board array after moving from -> to (pawns reaching the last rank become queens). */
+function applyGeom(board, from, to) {
+  const nb = board.slice();
+  const p = nb[from];
+  nb[to] = p.t === 'p' && (to >> 3 === 7 || to >> 3 === 0) ? { c: p.c, t: 'q' } : p;
+  nb[from] = null;
+  return nb;
+}
+
+/** Pseudo-legal destinations for the piece on `sq` (cheap; legality is checked later by chess.js). */
+function destinations(board, sq) {
+  const p = board[sq];
+  if (p.t !== 'p') return attacksFrom(board, sq).filter((t) => !board[t] || board[t].c !== p.c);
+  const d = p.c === 'w' ? 8 : -8, out = [];
+  if (!board[sq + d]) {
+    out.push(sq + d);
+    const home = p.c === 'w' ? 1 : 6;
+    if (sq >> 3 === home && !board[sq + 2 * d]) out.push(sq + 2 * d);
+  }
+  for (const t of attacksFrom(board, sq)) if (board[t] && board[t].c !== p.c) out.push(t);
+  return out.filter((t) => t >= 0 && t < 64);
+}
+
+/**
+ * Is there a mate in one for the side to move? Fast: board geometry picks the few
+ * moves that give check, and only those get the (slow) full legality + mate test.
+ */
 export function mateInOne(fen) {
-  let c;
-  try { c = new Chess(fen); } catch { return null; }
-  for (const m of c.moves({ verbose: true })) {
-    c.move(m);
-    const mate = c.isCheckmate();
-    c.undo();
-    if (mate) return m;
+  const board = boardFromFen(fen);
+  const me = fen.split(' ')[1];
+  const them = me === 'w' ? 'b' : 'w';
+  let c = null;
+  for (let s = 0; s < 64; s++) {
+    if (!board[s] || board[s].c !== me) continue;
+    for (const t of destinations(board, s)) {
+      const after = applyGeom(board, s, t);
+      const k = after.findIndex((p) => p && p.t === 'k' && p.c === them);
+      if (k < 0 || !attackersOf(after, k, me).length) continue; // not even check
+      if (!c) { try { c = new Chess(fen); } catch { return null; } }
+      let m;
+      try { m = c.move({ from: sqName(s), to: sqName(t), promotion: 'q' }); } catch { continue; }
+      const mate = c.isCheckmate();
+      c.undo();
+      if (mate) return m;
+    }
   }
   return null;
 }
@@ -277,21 +314,28 @@ export const pct = (p) => (p >= 0.995 ? '99%' : p < 0.01 ? '<1%' : `${Math.round
 /** Checks, captures and threats available to the side to move — the "forcing moves" scan. */
 export function forcingMoves(fen) {
   const c = new Chess(fen);
+  const board = boardFromFen(fen);
+  const me = c.turn(), them = me === 'w' ? 'b' : 'w';
   const out = { checks: [], captures: [], threats: [] };
   for (const m of c.moves({ verbose: true })) {
     if (m.san.includes('+') || m.san.includes('#')) out.checks.push(m.san);
     else if (m.captured) out.captures.push(m.san);
     else {
-      const d = describeMove(fen, m);
-      if (d && d.tags.some((t) => ['fork', 'threat', 'matethreat', 'discovered', 'pin', 'skewer'].includes(t.kind))) out.threats.push(m.san);
+      // Cheap threat test: after the move, does the piece hit something loose or bigger than itself?
+      const to = sqIdx(m.to);
+      const after = applyGeom(board, sqIdx(m.from), to);
+      const mover = after[to];
+      const hits = attacksFrom(after, to).filter((s) => after[s] && after[s].c === them && after[s].t !== 'k'
+        && (VALUE[after[s].t] > VALUE[mover.t] || !attackersOf(after, s, them).length));
+      if (hits.length) out.threats.push(m.san);
     }
   }
   return out;
 }
 
 /** Simple style features of a move, used for the play-style profile. */
-export function moveFeatures(fen, move) {
-  const d = describeMove(fen, move);
+export function moveFeatures(fen, move, desc = null) {
+  const d = desc || describeMove(fen, move);
   if (!d) return null;
   const kinds = new Set(d.tags.map((t) => t.kind));
   const c = new Chess(fen);

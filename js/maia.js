@@ -10,6 +10,8 @@ const CACHE = 'chess-gym-models-v1';
 
 ort.env.wasm.wasmPaths = new URL('../vendor/ort/', import.meta.url).href;
 ort.env.wasm.numThreads = 1;
+// Run inference in a Web Worker so the board never freezes while Maia thinks.
+ort.env.wasm.proxy = true;
 
 export class Maia {
   constructor() { this.session = null; this.source = null; }

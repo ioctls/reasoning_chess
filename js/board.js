@@ -41,6 +41,12 @@ export class Board {
 
   set(state) { Object.assign(this, state); this.render(); }
 
+  /** Resolves once any piece slide in progress has finished (so heavy work doesn't stall it). */
+  settled() {
+    const left = (this.active || []).reduce((m, a) => Math.max(m, a.t0 + a.dur - performance.now()), 0);
+    return new Promise((r) => setTimeout(r, Math.max(0, left) + 30));
+  }
+
   render() {
     const svg = this.svg;
     svg.textContent = '';

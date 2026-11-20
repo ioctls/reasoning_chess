@@ -7,7 +7,7 @@ with sync_playwright() as p:
     pg=b.new_page(viewport={'width':390,'height':844}, device_scale_factor=2)
     pg.on('console', lambda m: errs.append(m.text) if m.type in ('error','warning') else None)
     pg.on('pageerror', lambda e: errs.append('PAGEERR '+str(e)))
-    pg.goto('http://localhost:8765/index.html')
+    pg.goto('http://localhost:8766/index.html')
     pg.wait_for_function('window.__gym && window.__gym.st.analysis', timeout=60000)
     print('engine ok; eval lines:', pg.evaluate('window.__gym.st.analysis.lines.length'))
     pg.screenshot(path='test/out/1_start.png', full_page=True)

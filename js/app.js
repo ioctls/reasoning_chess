@@ -15,6 +15,8 @@ import { ISSUES, classifyIssue, issueOfDrill } from './issues.js';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Let the browser paint a frame before the next chunk of work, so animations never stall.
+const breathe = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 const THREAT_KINDS = ['win', 'mate', 'matethreat', 'fork', 'check', 'threat', 'pin', 'skewer', 'discovered'];
 const IDEA_NAMES = { fork: 'a fork', pin: 'a pin', skewer: 'a skewer', discovered: 'a discovered attack', matethreat: 'a mate threat', mate: 'checkmate', win: 'winning material', check: 'a forcing check', threat: 'an attack on a loose piece', promo: 'promotion', defend: 'defending', escape: 'saving a piece', castle: 'king safety', develop: 'development', center: 'the center', attack: 'king pressure', activate: 'piece activity', trade: 'a trade', capture: 'a capture', quiet: 'a quiet improvement' };
 
@@ -97,7 +99,9 @@ async function startMyTurn() {
   const fen = st.game.fen();
   refresh(); renderCoach();
   if (st.game.isGameOver()) return endGame();
-  analyseCurrent();
+  analyseCurrent(); // runs in a worker, safe to start right away
+  await board.settled();
+  if (tok !== st.token) return;
   if (maia.ready) {
     maia.predict(st.game, settings.myElo, settings.oppElo).then((h) => {
       if (tok !== st.token) return;
@@ -112,6 +116,8 @@ async function buildThreatQuiz(tok) {
   const o = st.opp;
   const key = new Set();
   const notes = [];
+  await breathe();
+  if (tok !== st.token) return;
   const theirMove = describeMove(o.fenBefore, o.uci);
   if (st.game.inCheck()) { o.idea = { text: `${o.san} gives check.`, arrows: [], key }; renderCoach(); return; }
   for (const t of theirMove.tags) if (THREAT_KINDS.includes(t.kind) && t.kind !== 'check') { t.squares.forEach((s) => key.add(sqName(s))); notes.push(t.text); }
@@ -123,6 +129,8 @@ async function buildThreatQuiz(tok) {
     if (tok !== st.token) return;
     const nb = a.best;
     if (nb) {
+      await breathe();
+      if (tok !== st.token) return;
       const d = describeMove(nf, nb);
       const serious = d && d.tags.some((t) => ['win', 'mate', 'fork', 'matethreat', 'skewer', 'discovered'].includes(t.kind));
       if (serious) {
@@ -176,6 +184,7 @@ async function doMyMove(from, to) {
   resetTurnState();
   st.busy = true; st.review = { pending: true, san: mv.san }; st.opp = null;
   refresh(); renderCoach();
+  const slid = board.settled();
 
   const pre = (st.analysisP && st.analysisP.fen === fenBefore) ? await st.analysisP.p : await engine.analyse(fenBefore, { depth: settings.depth, multipv: 3 });
   let myWin;
@@ -190,8 +199,11 @@ async function doMyMove(from, to) {
   let humanP = null;
   if (humanBefore) humanP = (humanBefore.moves.find((m) => m.uci === uci) || { p: 0 }).p;
   else if (maia.ready) { try { const h = await maia.predict(before, settings.myElo, settings.oppElo); humanP = (h.moves.find((m) => m.uci === uci) || { p: 0 }).p; } catch { /* ignore */ } }
+  await slid; // explaining is CPU work: never do it while the piece is still sliding
   const mine = describeMove(fenBefore, uci);
-  const best = pre.best ? describeMove(fenBefore, pre.best) : null;
+  await breathe();
+  const best = pre.best ? (pre.best === uci ? mine : describeMove(fenBefore, pre.best)) : null;
+  await breathe();
   const refuteUci = post && post.lines[0] ? post.lines[0].pv[0] : null;
   const refute = loss > 5 && refuteUci ? describeMove(st.game.fen(), refuteUci) : null;
   const issue = loss > 10 ? classifyIssue({ mine, best, refute, refuteUci, threatUci }) : null;
@@ -202,13 +214,16 @@ async function doMyMove(from, to) {
   if (st.mode === 'drill') return finishDrill(loss);
 
   // Learn about you.
-  recordMove(profile, { mine: moveFeatures(fenBefore, uci), best: pre.best ? moveFeatures(fenBefore, pre.best) : null, loss, humanP, issue });
+  recordMove(profile, { mine: moveFeatures(fenBefore, uci, mine), best: pre.best ? moveFeatures(fenBefore, pre.best, best) : null, loss, humanP, issue });
   if (issue && best) addDrill(profile, { fen: fenBefore, best: pre.best, bestSan: best.san, kinds: best.tags.map((t) => t.kind), mySan: mv.san, issue });
-  if (maia.ready) {
-    try { recordEloEvidence(profile, await maia.moveProbAcrossElos(before, uci, ELO_GRID, settings.oppElo)); } catch (e) { console.warn(e); }
-  }
   saveProfile(profile);
   refresh(); renderCoach();
+  if (maia.ready) {
+    // "Who you play like" evidence: not urgent, so it runs while you read the review.
+    maia.moveProbAcrossElos(before, uci, ELO_GRID, settings.oppElo)
+      .then((p) => { recordEloEvidence(profile, p); saveProfile(profile); })
+      .catch((e) => console.warn(e));
+  }
   if (st.game.isGameOver()) return endGame();
   await opponentMove(PAUSE_BEFORE_REPLY);
 }
@@ -520,7 +535,9 @@ function hintCard() {
   const a = st.analysis && st.analysis.fen === st.game.fen() ? st.analysis : null;
   if (!a) return '<div class="card"><p class="muted">💡 Still thinking…</p></div>';
   const items = [];
-  const fm = forcingMoves(st.game.fen());
+  const fen = st.game.fen();
+  if (!st.forcing || st.forcing.fen !== fen) st.forcing = { fen, ...forcingMoves(fen) };
+  const fm = st.forcing;
   items.push(`<b>Step 1 — scan forcing moves.</b> Checks: ${fm.checks.length}, captures: ${fm.captures.length}, threats: ${fm.threats.length}. Strong players look at these first, every move. ${hangingPieces(boardFromFen(st.game.fen()), st.myColor === 'w' ? 'b' : 'w').length ? 'Yellow rings = their loose pieces.' : ''}`);
   const best = a.best && describeMove(st.game.fen(), a.best);
   if (st.hint >= 2 && best) items.push(`<b>Step 2 — the piece.</b> The highlighted ${NAME[st.game.get(a.best.slice(0, 2)).type]} has the key move.`);
@@ -712,3 +729,4 @@ renderModel();
 maia.loadCached(settings.modelUrl).then(() => renderModel());
 newGame();
 window.__gym = { st, engine, maia, settings, profile: () => profile, goTo };
+window.__gymBoard = board;
