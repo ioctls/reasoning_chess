@@ -14,32 +14,30 @@ jobs:
     env:
       HAS_UPLOAD_KEY: ${{ secrets.UPLOAD_KEYSTORE_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # ---------- the bundled model (pinned + checksum-verified) ----------
       - name: Fetch Maia-3 model
         run: scripts/fetch-model.sh
 
       # ---------- logic tests ----------
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with: { python-version: '3.12' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: '22' }
       - name: Install test tools
         run: |
           pip install onnxruntime==1.23.* chess numpy
           ONNXRUNTIME_NODE_INSTALL=skip npm i --no-save onnxruntime-node@1.23.0
       - name: Board encoding matches the official Maia-3 code
-        run: python test/ref_encode.py && node test/check_encode.mjs
+        run: scripts/ci-run.sh "python test/ref_encode.py && node test/check_encode.mjs"
       - name: Tactic detector
-        run: node test/check_analysis.mjs
+        run: scripts/ci-run.sh "node test/check_analysis.mjs"
       - name: Real Maia-3 model gives the same, human-looking answers in Python and in the app's JS
-        run: |
-          python test/real_model_ref.py models/maia3-5m.fp16.onnx > ref.json
-          node test/real_model_check.mjs models/maia3-5m.fp16.onnx ref.json
+        run: scripts/ci-run.sh "python test/real_model_ref.py models/maia3-5m.fp16.onnx > ref.json && node test/real_model_check.mjs models/maia3-5m.fp16.onnx ref.json"
 
       # ---------- Android build ----------
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.14.3' }
@@ -65,7 +63,7 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: bash test/android_selftest.sh android/app/build/outputs/apk/debug/app-debug.apk
+          script: scripts/ci-run.sh 'bash test/android_selftest.sh android/app/build/outputs/apk/debug/app-debug.apk'
 
       # ---------- signed release for Google Play (only once the upload key secrets exist) ----------
       - name: Build signed release (AAB for Play + APK)
