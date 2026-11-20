@@ -13,6 +13,8 @@ import {
 import { ISSUES, classifyIssue, issueOfDrill } from './issues.js';
 
 const $ = (s) => document.querySelector(s);
+// Running inside the Android app? Then everything is bundled and there is no network at all.
+const IN_APP = location.host === 'appassets.androidplatform.net';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Let the browser paint a frame before the next chunk of work, so animations never stall.
@@ -68,7 +70,12 @@ const board = new Board($('#board'), { onSquareTap });
 // ---------- engine helpers ----------
 function analyseCurrent() {
   const fen = st.game.fen();
-  if (st.analysisP && st.analysisP.fen === fen) return st.analysisP.p;
+  if (st.analysisP && st.analysisP.fen === fen) {
+    // Same position as before (e.g. the turn restarted after Maia finished loading):
+    // reuse the search, but make sure its result is shown again.
+    st.analysisP.p.then((res) => { if (st.game.fen() === fen && !st.analysis) { st.analysis = res; refresh(); renderCoach(); } });
+    return st.analysisP.p;
+  }
   const p = engine.analyse(fen, { depth: settings.depth, multipv: 3 }).then((a) => {
     const res = { fen, ...a };
     // Remember your winning chances after their move too, for the report graph.
@@ -866,11 +873,17 @@ $('#settings').addEventListener('close', () => {
 });
 
 function renderModel(progress) {
-  const status = maia.ready ? `Maia-3 ready (${maia.source === 'cache' ? 'offline, from cache' : maia.source})` : st.modelMsg || 'not loaded';
+  const status = maia.ready ? `Maia-3 ready (${{ bundled: 'built in, offline', cache: 'offline, from cache' }[maia.source] || maia.source})` : st.modelMsg || 'not loaded';
+  document.querySelectorAll('.web-only').forEach((e) => { e.hidden = IN_APP; });
   $('#model-status').textContent = status;
   const bn = $('#model-banner');
   if (maia.ready) { bn.hidden = true; return; }
   bn.hidden = false;
+  if (IN_APP) { // the model ships inside the app; only speak up if loading actually failed
+    if (!st.modelMsg) { bn.hidden = true; return; }
+    bn.innerHTML = `<b>Human model failed to load.</b> ${esc(st.modelMsg || 'Please reinstall the app.')}`;
+    return;
+  }
   bn.innerHTML = progress != null
     ? `Loading Maia-3… <div class="progress"><div style="width:${Math.round((progress || 0) * 100)}%"></div></div>`
     : `<b>Human model off.</b> Load Maia-3 (11 MB, once — then it works offline) for a human-like opponent and "what players at your level do".${st.modelMsg ? `<br><span class="small muted">${esc(st.modelMsg)}</span>` : ''}
@@ -889,7 +902,34 @@ $('#model-file').addEventListener('change', (e) => { if (e.target.files?.[0]) lo
 
 // ---------- boot ----------
 renderModel();
-maia.loadCached(settings.modelUrl).then(() => renderModel());
+const modelReady = maia.loadBundled()
+  .then((ok) => ok || (!IN_APP && maia.loadCached(settings.modelUrl)))
+  .catch((e) => { st.modelMsg = String(e.message || e); })
+  .finally(() => { renderModel(); if (maia.ready && st.game.turn() === st.myColor && !st.busy) startMyTurn(); });
 newGame();
+if (location.hash === '#selftest') selfTest();
+
+/**
+ * Offline self-test (used by the CI emulator run). Proves, on a real Android device with
+ * no network: Stockfish analyses, Maia-3 predicts sensible human moves, and the network is unreachable.
+ */
+async function selfTest() {
+  const out = { ok: false };
+  try {
+    const { Chess: C } = await import('../vendor/chess/chess.js');
+    const sf = await engine.analyse(new C().fen(), { depth: 8 });
+    out.stockfish = sf.best;
+    await modelReady;
+    out.maiaSource = maia.source;
+    if (!maia.ready) throw new Error('Maia not loaded');
+    const h = await maia.predict(new C(), 1500, 1500);
+    out.maiaTop = h.moves.slice(0, 3).map((m) => `${m.uci}:${m.p.toFixed(2)}`);
+    const sum = h.moves.reduce((a, m) => a + m.p, 0);
+    out.network = await fetch('https://example.com/', { cache: 'no-store' }).then(() => 'REACHABLE', () => 'blocked');
+    const sensible = ['e2e4', 'd2d4', 'g1f3', 'c2c4'].includes(h.moves[0].uci) && Math.abs(sum - 1) < 1e-3;
+    out.ok = !!sf.best && sensible && maia.source === 'bundled' && out.network === 'blocked';
+  } catch (e) { out.error = String(e && e.message || e); }
+  console.log(`SELFTEST ${out.ok ? 'PASS' : 'FAIL'} ${JSON.stringify(out)}`);
+}
 window.__gym = { st, engine, maia, settings, profile: () => profile, goTo };
 window.__gymBoard = board;

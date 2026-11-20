@@ -2,27 +2,59 @@ plugins {
     id 'com.android.application'
 }
 
-// The web app (index.html, js/, vendor/ ...) lives at the repo root.
+// The web app (index.html, js/, vendor/, models/ ...) lives at the repo root.
 // It is copied into the APK's assets at build time, so there's one source of truth.
+def repoRoot = rootProject.projectDir.parentFile
 def webAssets = layout.buildDirectory.dir('webassets').get().asFile
 
 tasks.register('copyWebApp', Copy) {
-    from(rootProject.projectDir.parentFile) {
-        include 'index.html', 'styles.css', 'js/**', 'vendor/**', 'LICENSE'
+    from(repoRoot) {
+        include 'index.html', 'styles.css', 'js/**', 'vendor/**', 'models/**', 'LICENSE', 'NOTICE.md'
+        exclude 'vendor/**/package.json'
     }
     into webAssets
+    doLast {
+        // The app is offline-only: refuse to build a release without the bundled model.
+        def model = new File(webAssets, 'models/maia3-5m.fp16.onnx')
+        if (!model.exists() && gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }) {
+            throw new GradleException('models/maia3-5m.fp16.onnx is missing. Run scripts/fetch-model.sh first.')
+        }
+    }
 }
+
+// Release signing: the upload key comes from environment variables (GitHub secrets),
+// never from the repository.
+def ks = System.getenv('UPLOAD_KEYSTORE_FILE')
 
 android {
     namespace 'com.ioctls.reasonablechess'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.ioctls.reasonablechess'
         minSdk 26
-        targetSdk 34   // 35 forces edge-to-edge, which would push the page under the status bar
-        versionCode 1
-        versionName '0.1.0'
+        targetSdk 36
+        // Every CI build gets a higher number, as Google Play requires for each upload.
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger() + 100)
+        versionName '1.0.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
+    }
+
+    signingConfigs {
+        if (ks) {
+            upload {
+                storeFile file(ks)
+                storePassword System.getenv('UPLOAD_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('UPLOAD_KEY_ALIAS')
+                keyPassword System.getenv('UPLOAD_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false   // tiny app; nothing to shrink, and the code is open source anyway
+            if (ks) signingConfig signingConfigs.upload
+        }
     }
 
     sourceSets {
@@ -39,10 +71,16 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
 }
 
 dependencies {
-    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.webkit:webkit:1.14.0'
+    implementation 'androidx.core:core:1.16.0'
 }
 
 tasks.named('preBuild') { dependsOn 'copyWebApp' }

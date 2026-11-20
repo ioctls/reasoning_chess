@@ -5,6 +5,8 @@
 import * as ort from '../vendor/ort/ort.wasm.min.mjs';
 import { encodeBoard, legalMoveIndices, legalPolicy, wdlFromLogits, VOCAB_SIZE } from './maia-encode.js';
 
+// Shipped inside the Android app (and in local builds after scripts/fetch-model.sh).
+export const BUNDLED_MODEL_URL = new URL('../models/maia3-5m.fp16.onnx', import.meta.url).href;
 export const DEFAULT_MODEL_URL = 'https://huggingface.co/bqrio/maia3-onnx/resolve/main/maia3-5m.fp16.onnx';
 const CACHE = 'reasonable-chess-models-v1';
 
@@ -23,6 +25,16 @@ export class Maia {
     this.session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' });
     this.source = source;
     return this;
+  }
+
+  /** The copy bundled with the app: same origin, no network. Returns true if loaded. */
+  async loadBundled() {
+    try {
+      const res = await fetch(BUNDLED_MODEL_URL);
+      if (!res.ok) return false;
+      await this._create(new Uint8Array(await res.arrayBuffer()), 'bundled');
+      return true;
+    } catch { return false; }
   }
 
   /** Try the cache only (no network). Returns true if loaded. */

@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build, test and release
 
 on:
   push:
@@ -6,43 +6,98 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  apk:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
-      contents: write   # to update the "latest" release with the new APK
+      contents: write   # to update the "latest" release
+    env:
+      HAS_UPLOAD_KEY: ${{ secrets.UPLOAD_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
+      # ---------- the bundled model (pinned + checksum-verified) ----------
+      - name: Fetch Maia-3 model
+        run: scripts/fetch-model.sh
+
+      # ---------- logic tests ----------
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Install test tools
+        run: |
+          pip install onnxruntime==1.23.* chess numpy
+          ONNXRUNTIME_NODE_INSTALL=skip npm i --no-save onnxruntime-node@1.23.0
+      - name: Board encoding matches the official Maia-3 code
+        run: python test/ref_encode.py && node test/check_encode.mjs
+      - name: Tactic detector
+        run: node test/check_analysis.mjs
+      - name: Real Maia-3 model gives the same, human-looking answers in Python and in the app's JS
+        run: |
+          python test/real_model_ref.py models/maia3-5m.fp16.onnx > ref.json
+          node test/real_model_check.mjs models/maia3-5m.fp16.onnx ref.json
+
+      # ---------- Android build ----------
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
+        with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-
-      - name: Build debug APK
+        with: { gradle-version: '8.14.3' }
+      - name: Build debug APK (for the emulator test)
         run: gradle -p android assembleDebug
+      - name: The app declares no permissions
+        run: |
+          AAPT2=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)aapt2
+          $AAPT2 dump permissions android/app/build/outputs/apk/debug/app-debug.apk | tee perms.txt
+          if grep -q "uses-permission" perms.txt; then echo "Unexpected permission requested"; exit 1; fi
 
-      - name: Rename
+      # ---------- real Android device, no network ----------
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Offline self-test on an Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash test/android_selftest.sh android/app/build/outputs/apk/debug/app-debug.apk
+
+      # ---------- signed release for Google Play (only once the upload key secrets exist) ----------
+      - name: Build signed release (AAB for Play + APK)
+        if: env.HAS_UPLOAD_KEY == 'true'
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+        run: |
+          echo "$UPLOAD_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export UPLOAD_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks"
+          gradle -p android bundleRelease assembleRelease
+          rm -f "$RUNNER_TEMP/upload.jks"
+          cp android/app/build/outputs/bundle/release/app-release.aab reasonable-chess.aab
+          cp android/app/build/outputs/apk/release/app-release.apk reasonable-chess.apk
+      - name: No upload key yet: ship the debug APK
+        if: env.HAS_UPLOAD_KEY != 'true'
         run: cp android/app/build/outputs/apk/debug/app-debug.apk reasonable-chess.apk
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: reasonable-chess-apk
-          path: reasonable-chess.apk
-
-      # Keep the "latest" tag pointing at the commit this APK was built from.
+      # ---------- publish ----------
       - name: Move latest tag
         run: |
           git tag -f latest
           git push -f origin refs/tags/latest
-
-      # A stable download link for your phone: Releases -> "latest" -> reasonable-chess.apk
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest build
           prerelease: true
-          files: reasonable-chess.apk
+          files: |
+            reasonable-chess.apk
+            reasonable-chess.aab
+            selftest.png
+          fail_on_unmatched_files: false

@@ -62,13 +62,21 @@
     <label class="row"><input type="checkbox" id="set-quiz"> Threat check before each of my moves</label>
     <div class="model-box">
       <div><b>Human model:</b> <span id="model-status">not loaded</span></div>
-      <div class="row-btns">
+      <div class="row-btns web-only">
         <button type="button" id="btn-model-dl">Download Maia-3 (11 MB)</button>
         <label class="filebtn">Load .onnx file<input type="file" id="model-file" accept=".onnx"></label>
       </div>
-      <input id="set-modelurl" type="url" spellcheck="false">
-      <small>Downloaded once, then cached on this device for offline use. Maia-3 by CSSLab (AGPL-3.0).</small>
+      <input id="set-modelurl" class="web-only" type="url" spellcheck="false">
+      <small>Runs entirely on this device. Maia-3 by CSSLab (AGPL-3.0).</small>
     </div>
+    <details class="about">
+      <summary>About &amp; privacy</summary>
+      <p><b>Reasonable Chess</b> runs entirely on your device. No account, no ads, no analytics, no tracking, and the app has no internet permission at all. Your games, stats and drills are stored only on this device and never leave it.</p>
+      <p>Free and open source (AGPL-3.0): <a href="https://github.com/ioctls/reasoning_chess" target="_blank" rel="noopener">github.com/ioctls/reasoning_chess</a></p>
+      <p>Questions, bugs or ideas: <a href="mailto:pthreadt@gmail.com">pthreadt@gmail.com</a> · <a href="https://github.com/ioctls/reasoning_chess/issues" target="_blank" rel="noopener">report an issue</a></p>
+      <p class="small muted">Privacy policy: <a href="https://github.com/ioctls/reasoning_chess/blob/main/PRIVACY.md" target="_blank" rel="noopener">github.com/ioctls/reasoning_chess/blob/main/PRIVACY.md</a></p>
+      <p class="small muted">Built with Stockfish 18 (GPL-3.0), Maia-3 by the University of Toronto CSSLab (AGPL-3.0), chess.js (BSD-2-Clause), ONNX Runtime Web (MIT) and the cburnett piece set (GPL). Full notices: NOTICE.md in the source.</p>
+    </details>
     <div class="row-btns end"><button value="close" class="primary">Done</button></div>
   </form>
 </dialog>

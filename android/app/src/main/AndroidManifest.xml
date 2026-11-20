@@ -1,14 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Only used for the one-time Maia-3 model download. -->
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      Deliberately NO permissions at all, not even INTERNET.
+      Everything the app needs (web app, Stockfish, Maia-3 model) is inside the APK,
+      so Android itself guarantees the app cannot send or receive anything over the network.
+    -->
+
+    <!-- AndroidX Core adds this internal, signature-level permission for a feature we don't use.
+         Removed so the app declares no permissions whatsoever. -->
+    <permission android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" tools:node="remove" />
+    <uses-permission android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" tools:node="remove" />
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="Reasonable Chess"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+        tools:targetApi="36">
+
+        <!-- WebView would otherwise check URLs with Google Safe Browsing and may send usage
+             metrics. This app only shows its own bundled files, so both are switched off. -->
+        <meta-data android:name="android.webkit.WebView.EnableSafeBrowsing" android:value="false" />
+        <meta-data android:name="android.webkit.WebView.MetricsOptOut" android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
