@@ -29,7 +29,7 @@ const SKEY = 'chessgym.settings.v1';
 let stored = {};
 try { stored = JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { /* ignore */ }
 const settings = Object.assign(
-  { myElo: 1200, oppElo: 1200, color: 'w', depth: 12, quiz: true, modelUrl: DEFAULT_MODEL_URL, layers: { threats: true, control: false, plan: false, humans: false } },
+  { mode: 'learn', myElo: 1200, oppElo: 1200, color: 'w', depth: 12, quiz: true, modelUrl: DEFAULT_MODEL_URL, layers: { threats: true, control: false, plan: false, humans: false } },
   stored,
 );
 const saveSettings = () => { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch { /* ignore */ } };
@@ -56,8 +56,12 @@ const st = {
   view: null,          // null = live; otherwise index into log (-1 = start position)
   preview: null,       // { fens, pv, sans, idx, notes, title }
   drill: null, drillResult: null, drillIssue: undefined, drillPicking: false,
+  awaitingContinue: false, // Learn mode: bot waits until you tap Continue
+  resigned: false,
   modelMsg: null,
 };
+const learning = () => settings.mode === 'learn';
+const over = () => st.game.isGameOver() || st.resigned;
 
 const board = new Board($('#board'), { onSquareTap });
 
@@ -67,6 +71,9 @@ function analyseCurrent() {
   if (st.analysisP && st.analysisP.fen === fen) return st.analysisP.p;
   const p = engine.analyse(fen, { depth: settings.depth, multipv: 3 }).then((a) => {
     const res = { fen, ...a };
+    // Remember your winning chances after their move too, for the report graph.
+    const last = st.log[st.log.length - 1];
+    if (last && last.by === 'them' && last.fenAfter === fen && a.lines[0]) last.myWin = winChance(a.lines[0].score);
     if (st.game.fen() === fen) { st.analysis = res; refresh(); renderCoach(); }
     return res;
   });
@@ -80,7 +87,8 @@ function newGame() {
   st.drill = null; st.drillResult = null; st.drillPicking = false;
   st.game = new Chess();
   st.myColor = settings.color === 'r' ? (Math.random() < 0.5 ? 'w' : 'b') : settings.color;
-  st.review = null; st.opp = null; st.preview = null; st.log = []; st.view = null;
+  st.review = null; st.opp = null; closePreview(); st.log = []; st.view = null;
+  st.resigned = false; st.awaitingContinue = false;
   board.orientation = st.myColor;
   profile.games++; saveProfile(profile);
   if (st.myColor === 'w') startMyTurn(); else opponentMove(PAUSE_FIRST_MOVE);
@@ -98,7 +106,7 @@ async function startMyTurn() {
   const tok = st.token;
   const fen = st.game.fen();
   refresh(); renderCoach();
-  if (st.game.isGameOver()) return endGame();
+  if (over()) return endGame();
   analyseCurrent(); // runs in a worker, safe to start right away
   await board.settled();
   if (tok !== st.token) return;
@@ -142,7 +150,7 @@ async function buildThreatQuiz(tok) {
     }
   }
   o.idea = { text: notes.length ? notes.join(' ') : `${o.san} doesn't create an immediate threat. Free to follow your own plan.`, arrows, key, threatUci };
-  if (settings.quiz && st.mode === 'game') st.quiz = { key, answered: false };
+  if (settings.quiz && st.mode === 'game' && learning()) st.quiz = { key, answered: false };
   refresh(); renderCoach();
 }
 
@@ -161,7 +169,7 @@ function onSquareTap(sq) {
   if (st.preview) return;
   if (st.view != null) { goLive(); return; } // tapping the board while replaying jumps back to the game
   if (st.quiz && !st.quiz.answered) return answerQuiz(sq);
-  if (st.busy || st.game.turn() !== st.myColor || st.game.isGameOver()) return;
+  if (st.busy || st.game.turn() !== st.myColor || over()) return;
   if (st.selected && st.targets.includes(sq)) return doMyMove(st.selected, sq);
   const p = st.game.get(sq);
   if (p && p.color === st.myColor) {
@@ -224,11 +232,26 @@ async function doMyMove(from, to) {
       .then((p) => { recordEloEvidence(profile, p); saveProfile(profile); })
       .catch((e) => console.warn(e));
   }
-  if (st.game.isGameOver()) return endGame();
-  await opponentMove(PAUSE_BEFORE_REPLY);
+  if (over()) return endGame();
+  if (learning()) {
+    // Learn mode: read the feedback first; the bot moves when you tap Continue.
+    st.awaitingContinue = true;
+    refresh(); renderCoach();
+    return;
+  }
+  await opponentMove(PAUSE_FIRST_MOVE);
+}
+
+function continueGame() {
+  if (!st.awaitingContinue) return;
+  st.awaitingContinue = false;
+  st.review = null; // one block at a time: your feedback goes away, their move comes in
+  closePreview();
+  opponentMove(250);
 }
 
 async function opponentMove(pause = PAUSE_BEFORE_REPLY) {
+  if (over()) return endGame();
   st.busy = true; st.thinking = true;
   const tok = st.token;
   refresh(); renderCoach();
@@ -259,11 +282,13 @@ function endGame() {
 }
 
 function takeBack() {
-  if (st.busy || st.mode !== 'game' || !st.log.length) return;
+  if (st.mode === 'game' && !learning() && !over() && st.log.length) { st.resigned = true; st.token++; st.busy = false; st.thinking = false; closePreview(); endGame(); return; }
+  if (st.resigned || st.mode !== 'game' || !st.log.length || (st.busy && !st.awaitingContinue)) return;
+  st.awaitingContinue = false;
   st.view = null;
   st.game.undo(); st.log.pop();
   if (st.game.turn() !== st.myColor && st.log.length) { st.game.undo(); st.log.pop(); }
-  st.review = null; st.opp = null; st.preview = null;
+  st.review = null; st.opp = null; closePreview();
   if (st.game.turn() === st.myColor) startMyTurn(); else opponentMove(PAUSE_FIRST_MOVE);
 }
 
@@ -312,7 +337,10 @@ function finishDrill(loss) {
 }
 
 // ---------- idea preview ("show me what it's thinking") ----------
+const STEP_MS = 1300;
+
 function openPreview(fen, pv, title) {
+  closePreview();
   const c = new Chess(fen);
   const fens = [fen], sans = [], notes = [];
   for (const u of pv.slice(0, 6)) {
@@ -323,13 +351,67 @@ function openPreview(fen, pv, title) {
     notes.push(d ? d.tags.filter((t) => t.kind !== 'quiet').map((t) => t.text).join(' ') : '');
     fens.push(c.fen());
   }
-  st.preview = { fens, pv: pv.slice(0, sans.length), sans, notes, idx: 0, title };
+  const p = { fens, pv: pv.slice(0, sans.length), sans, notes, idx: 0, title, evals: [], playing: true, timer: null };
+  st.preview = p;
+  // Evaluate every position in the line (in the engine's worker) so the eval bar can follow along.
+  (async () => {
+    for (let i = 0; i < fens.length; i++) {
+      const a = await engine.analyse(fens[i], { depth: Math.min(10, settings.depth) });
+      if (st.preview !== p) return;
+      const c2 = new Chess(fens[i]);
+      let w;
+      if (c2.isCheckmate()) w = c2.turn() === st.myColor ? 0 : 100;
+      else if (c2.isDraw() || c2.isStalemate()) w = 50;
+      else { const stm = winChance(a.lines[0]?.score); w = c2.turn() === st.myColor ? stm : 100 - stm; }
+      p.evals[i] = w;
+      refresh(); renderCoach();
+    }
+  })();
   refresh(); renderCoach();
+  schedulePreview(900); // a moment to look at the starting position, then it plays itself
+}
+
+function schedulePreview(delay = STEP_MS) {
+  const p = st.preview;
+  if (!p) return;
+  clearTimeout(p.timer);
+  if (!p.playing) return;
+  if (p.idx >= p.sans.length) { p.playing = false; renderCoach(); return; }
+  p.timer = setTimeout(() => {
+    if (st.preview !== p || !p.playing) return;
+    p.idx++;
+    refresh(); renderCoach();
+    schedulePreview();
+  }, delay);
+}
+
+function previewStep(d) {
+  const p = st.preview;
+  if (!p) return;
+  p.playing = false; clearTimeout(p.timer);
+  p.idx = Math.max(0, Math.min(p.sans.length, p.idx + d));
+  refresh(); renderCoach();
+}
+
+function previewToggle() {
+  const p = st.preview;
+  if (!p) return;
+  if (p.playing) { p.playing = false; clearTimeout(p.timer); renderCoach(); return; }
+  if (p.idx >= p.sans.length) { p.idx = 0; refresh(); }
+  p.playing = true; renderCoach();
+  schedulePreview(500);
+}
+
+function closePreview() {
+  if (st.preview) clearTimeout(st.preview.timer);
+  if (st.preview) board.prevBoard = null; // jump straight back, no slide from the preview position
+  st.preview = null;
 }
 
 // ---------- rendering ----------
 function overlaysFor(fen) {
   const ov = { arrows: [], rings: [], highlights: [] };
+  if (st.mode === 'game' && !learning() && !over() && !st.preview) return ov; // Play mode: no help until the end
   const L = settings.layers;
   const b = boardFromFen(fen);
   if (L.control) ov.control = controlMap(b);
@@ -389,7 +471,10 @@ function refresh() {
 
   // Eval bar: your winning chances.
   let w = null;
-  if (st.view != null) {
+  const playing = st.mode === 'game' && !learning() && !over();
+  if (st.preview) w = st.preview.evals[st.preview.idx] ?? null;
+  else if (playing) w = null;
+  else if (st.view != null) {
     const e = st.log[st.view];
     const r = e && (e.review || (st.log[st.view - 1] && st.log[st.view - 1].review));
     if (r) w = r.myWin;
@@ -398,13 +483,17 @@ function refresh() {
     w = st.game.turn() === st.myColor ? stm : 100 - stm;
   } else if (st.review && st.review.myWin != null) w = st.review.myWin;
   if (w != null) { $('#evalfill').style.height = `${w}%`; $('#evaltext').textContent = Math.round(w); }
+  else if (playing) { $('#evalfill').style.height = '50%'; $('#evaltext').textContent = ''; }
+  $('#view-board').classList.toggle('play-mode', playing);
+  document.querySelectorAll('#mode button').forEach((b) => b.classList.toggle('on', b.dataset.mode === settings.mode));
 
   document.querySelectorAll('#layers .chip').forEach((c) => c.classList.toggle('on', !!settings.layers[c.dataset.layer]));
-  const inGame = st.mode === 'game' && !st.preview;
+  const inGame = st.mode === 'game' && !st.preview && !playing;
   $('#btn-back').disabled = !inGame || curPly() < 0;
   $('#btn-fwd').disabled = !inGame || st.view == null;
-  $('#btn-undo').disabled = st.busy || st.mode !== 'game' || !st.log.length;
-  $('#btn-hint').disabled = st.busy || !!st.preview || st.view != null || st.game.turn() !== st.myColor || st.game.isGameOver() || st.drillPicking;
+  $('#btn-undo').textContent = playing ? '🏳 Resign' : '↶ Undo';
+  $('#btn-undo').disabled = st.resigned || (playing ? !st.log.length : ((st.busy && !st.awaitingContinue) || st.mode !== 'game' || !st.log.length));
+  $('#btn-hint').disabled = playing || st.busy || !!st.preview || st.view != null || st.game.turn() !== st.myColor || over() || st.drillPicking;
   $('#btn-new').textContent = st.mode === 'drill' ? '← Game' : 'New game';
   renderMoves();
 }
@@ -450,41 +539,54 @@ function reviewCard(r, ply) {
   return `<div class="card"><h3>${esc(r.san)} <span class="tag ${r.v.tone}">${esc(r.v.label)}</span>${humanTag}</h3>${body}${btns.length ? `<div class="row-btns">${btns.join('')}</div>` : ''}</div>`;
 }
 
-/** Swap in cards; unchanged cards stay put, new or changed ones fade in. */
+/**
+ * Swap in cards. Unchanged cards stay put; new ones fade in. A card with a data-key
+ * (like the line preview) updates in place without fading, so stepping doesn't flicker.
+ */
 function setCards(el, cards) {
   const old = [...el.children];
   const frag = document.createDocumentFragment();
-  cards.forEach((html, i) => {
+  for (const html of cards) {
     const prev = old.find((c) => c.dataset.h === html);
-    if (prev) { frag.appendChild(prev); return; }
+    if (prev) { frag.appendChild(prev); continue; }
     const wrap = document.createElement('div');
     wrap.innerHTML = html;
     const node = wrap.firstElementChild || wrap;
     node.dataset.h = html;
-    node.classList.add('card-in');
+    const key = node.dataset.key;
+    if (!(key && old.some((c) => c.dataset.key === key))) node.classList.add('card-in');
     frag.appendChild(node);
-  });
+  }
   el.replaceChildren(frag);
+}
+
+const winTxt = (w) => (w == null ? '' : `${Math.round(w)}%`);
+
+function previewCard() {
+  const p = st.preview;
+  const e = p.evals;
+  const chip = (i) => {
+    if (e[i + 1] == null) return '';
+    const d = e[i] != null ? e[i + 1] - e[i] : 0;
+    return `<span class="evalchip ${d > 4 ? 'up' : d < -4 ? 'down' : ''}">you ${winTxt(e[i + 1])}</span>`;
+  };
+  const atEnd = p.idx >= p.sans.length;
+  return `<div class="card" data-key="preview"><h3>👁 ${esc(p.title)}</h3>
+    <p class="small muted">Green = the side to move first, orange = the reply. The bar on the left is your winning chance at each step.${e[0] != null ? ` Starts at <b>${winTxt(e[0])}</b>.` : ''}</p>
+    <ol class="idea-steps">${p.sans.map((s, i) => `<li class="${i === p.idx - 1 ? 'now' : i < p.idx ? '' : 'later'}"><b>${esc(s)}</b>${chip(i)}${p.notes[i] ? ' — ' + esc(p.notes[i]) : ''}</li>`).join('')}</ol>
+    <div class="row-btns pv-controls"><button data-act="pv-prev" ${p.idx === 0 ? 'disabled' : ''} aria-label="Back">◀</button><button data-act="pv-toggle">${p.playing ? '❚❚ Pause' : atEnd ? '↻ Replay' : '▶ Play'}</button><button data-act="pv-next" ${atEnd ? 'disabled' : ''} aria-label="Next">▶|</button><button data-act="pv-close" class="primary">Done</button></div></div>`;
 }
 
 function renderCoach() {
   const el = $('#coach');
   const out = [];
 
-  if (st.preview) {
-    const p = st.preview;
-    out.push(`<div class="card"><h3>👁 ${esc(p.title)}</h3>
-      <p class="small muted">Green = the side to move, orange = the reply. Step through it and watch what each move <i>attacks</i>.</p>
-      <ol class="idea-steps">${p.sans.map((s, i) => `<li class="${i === p.idx ? 'now' : i < p.idx ? '' : 'later'}"><b>${esc(s)}</b>${p.notes[i] ? ' — ' + esc(p.notes[i]) : ''}</li>`).join('')}</ol>
-      <div class="row-btns"><button data-act="pv-prev" ${p.idx === 0 ? 'disabled' : ''}>◀</button><button data-act="pv-next" ${p.idx >= p.sans.length ? 'disabled' : ''}>▶ Play move</button><button data-act="pv-close" class="primary">Done</button></div></div>`);
-    setCards(el, out);
-    return;
-  }
+  if (st.preview) { setCards(el, [previewCard()]); return; }
 
   // Replaying the game
   if (st.view != null && st.mode === 'game') {
     const n = st.log.length;
-    out.push(`<div class="history-bar">Replaying · move <b>${st.view + 1}</b> of ${n} <button data-act="live" class="primary">Back to game ▸▸</button></div>`);
+    out.push(`<div class="history-bar">Replaying · move <b>${st.view + 1}</b> of ${n} <button data-act="live" class="primary">${over() ? 'Back to report' : 'Back to game'} ▸▸</button></div>`);
     const e = st.log[st.view];
     if (!e) out.push('<div class="card"><p class="muted">Start position.</p></div>');
     else if (e.by === 'me' && e.review) out.push(reviewCard(e.review, st.view));
@@ -493,42 +595,92 @@ function renderCoach() {
     return;
   }
 
-  if (st.mode === 'drill') {
-    renderDrillCoach(out);
+  if (st.mode === 'drill') { renderDrillCoach(out); setCards(el, out); return; }
+
+  if (over()) { out.push(reportCard()); setCards(el, out); return; }
+
+  if (!learning()) {
+    // Play mode: just play. Everything is saved for the report.
+    const msg = st.thinking ? `${maia.ready ? `Maia ${settings.oppElo}` : `Stockfish (~${settings.oppElo})`} is thinking…`
+      : st.busy ? 'Saving your move for the report…' : 'Your move.';
+    out.push(`<div class="card"><p class="muted">🎯 <b>Play mode</b> · ${msg}</p><p class="small muted">No hints or feedback until the game ends — then you get a full report. Switch to Learn anytime.</p></div>`);
     setCards(el, out);
     return;
   }
 
-  // Threat check quiz
-  if (st.quiz && !st.quiz.answered && st.opp) {
+  // ----- Learn mode: one block at a time -----
+  if (st.review) {
+    // Your move's feedback. The bot waits until you tap Continue.
+    let html = reviewCard(st.review, null);
+    if (st.awaitingContinue) html = html.replace(/<\/div>$/, '<button data-act="continue" class="primary continue">Got it — continue ▸</button></div>');
+    out.push(html);
+  } else if (st.thinking) {
+    out.push(`<div class="card"><p class="muted">${maia.ready ? `Maia ${settings.oppElo}` : `Stockfish (~${settings.oppElo})`} is thinking…</p></div>`);
+  } else if (st.quiz && !st.quiz.answered && st.opp) {
     out.push(`<div class="card"><h3>🛡 Threat check</h3><p>They played <b>${esc(st.opp.san)}</b>. Before you move: what is it after?</p><p class="small muted">Tap the piece or square they're targeting on the board.</p><div class="row-btns"><button data-act="quiz-none">Nothing serious</button><button data-act="quiz-skip">Skip</button></div></div>`);
   } else if (st.opp && st.opp.idea) {
     const q = st.quiz;
     const head = q ? (q.correct ? `✅ Spotted <span class="tag good">streak ${profile.quiz.streak}</span>` : q.pick === 'skip' ? 'Their idea' : '❌ Missed it') : 'Their idea';
     out.push(`<div class="card"><h3>${head}</h3><p><b>${esc(st.opp.san)}</b>: ${esc(st.opp.idea.text)}</p></div>`);
-  } else if (st.opp && settings.quiz && !st.game.isGameOver()) {
+  } else if (st.opp) {
     out.push(`<div class="card"><p class="muted">They played <b>${esc(st.opp.san)}</b>. Spotting their idea…</p></div>`);
-  }
-
-  if (st.review) out.push(reviewCard(st.review, null));
-
-  // Hints
-  if (st.hint > 0 && st.game.turn() === st.myColor && !st.busy) out.push(hintCard());
-
-  // Status
-  if (st.game.isGameOver()) {
-    let res = 'Draw.';
-    if (st.game.isCheckmate()) res = st.game.turn() === st.myColor ? 'Checkmate — you lost this one.' : 'Checkmate — you win! 🎉';
-    const issues = st.log.filter((e) => e.review?.issue).map((e) => e.review.issue);
-    const counts = {}; issues.forEach((k) => (counts[k] = (counts[k] || 0) + 1));
-    const list = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="tag issue-tag">${esc(ISSUES[k].label)} × ${n}</span>`).join(' ');
-    out.push(`<div class="card"><h3>${res}</h3>${list ? `<p class="small muted">What went wrong this game:</p><p>${list}</p>` : '<p class="small muted">No big mistakes this game. Nice.</p>'}<p class="small muted">Use ◀ ▶ to replay it. Mistakes are saved to Drills.</p><div class="row-btns"><button data-act="new" class="primary">New game</button><button data-act="drills">Practice my issues</button></div></div>`);
-  } else if (st.thinking) {
-    out.push(`<div class="card"><p class="muted">${maia.ready ? `Maia ${settings.oppElo}` : `Stockfish (~${settings.oppElo})`} is thinking…</p></div>`);
   } else if (!st.busy && !st.log.length) {
-    out.push(`<div class="card"><h3>Your move</h3><p class="small muted">After each move you'll see how good it was, how many players at your level would play it, and the idea behind the best move. Use ◀ ▶ to replay the game at any time. Toggle the layers above to see threats, square control, the engine's plan, or what humans tend to play.</p></div>`);
+    out.push(`<div class="card"><h3>Your move</h3><p class="small muted">After each move you'll get feedback, and the bot waits until you tap Continue. Use ◀ ▶ to replay the game anytime, and the layers above to see threats, square control, the engine's plan, or what humans tend to play. Prefer to just play? Switch to <b>Play</b> for a report at the end.</p></div>`);
   }
+  if (st.hint > 0 && st.game.turn() === st.myColor && !st.busy) out.push(hintCard());
   setCards(el, out);
+}
+
+/** End-of-game report: how it went, where it turned, and what to practice. */
+function reportCard() {
+  let res = 'Draw.';
+  if (st.resigned) res = 'You resigned.';
+  else if (st.game.isCheckmate()) res = st.game.turn() === st.myColor ? 'Checkmate — you lost this one.' : 'Checkmate — you win! 🎉';
+  const mine = st.log.map((e, i) => ({ e, i })).filter(({ e }) => e.by === 'me' && e.review && !e.review.pending);
+  const pending = st.log.some((e) => e.by === 'me' && (!e.review || e.review.pending));
+  const count = (keys) => mine.filter(({ e }) => keys.includes(e.review.v.key)).length;
+  const avg = mine.length ? mine.reduce((a, { e }) => a + e.review.loss, 0) / mine.length : 0;
+
+  // Your winning chance after every move, from the start.
+  const pts = [{ i: -1, w: 50 }];
+  st.log.forEach((e, i) => {
+    const w = e.by === 'me' ? e.review?.myWin : e.myWin;
+    if (w != null) pts.push({ i, w });
+  });
+  const n = Math.max(1, st.log.length);
+  const X = (i) => ((i + 1) / n) * 100, Y = (w) => 100 - w;
+  const line = pts.map((p, k) => `${k ? 'L' : 'M'}${X(p.i).toFixed(2)},${Y(p.w).toFixed(2)}`).join(' ');
+  const area = `${line} L${X(pts[pts.length - 1].i).toFixed(2)},100 L0,100 Z`;
+  const dots = mine.filter(({ e }) => ['inacc', 'mistake', 'blunder'].includes(e.review.v.key)).map(({ e, i }) => {
+    const c = { inacc: 'var(--meh)', mistake: '#fb923c', blunder: 'var(--bad)' }[e.review.v.key];
+    return `<circle cx="${X(i)}" cy="${Y(e.review.myWin)}" r="2.6" fill="${c}" stroke="#111" stroke-width=".6" data-act="jump" data-ply="${i}" style="cursor:pointer"/>`;
+  }).join('');
+  const graph = `<div class="report-graph"><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="Your winning chances over the game">
+      <line x1="0" y1="50" x2="100" y2="50" stroke="var(--line)" stroke-width=".5" vector-effect="non-scaling-stroke" stroke-dasharray="3 3"/>
+      <path d="${area}" fill="color-mix(in srgb, var(--you) 22%, transparent)"/>
+      <path d="${line}" fill="none" stroke="var(--you)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      ${dots}
+      ${st.log.map((_, i) => `<rect x="${X(i - 1)}" y="0" width="${100 / n}" height="100" fill="transparent" data-act="jump" data-ply="${i}" style="cursor:pointer"/>`).join('')}
+    </svg></div><p class="small muted" style="margin-top:0">Your winning chance over the game. Tap anywhere on it to replay that moment; dots are mistakes.</p>`;
+
+  const moments = mine.filter(({ e }) => e.review.loss > 10).sort((a, b) => b.e.review.loss - a.e.review.loss).slice(0, 4)
+    .sort((a, b) => a.i - b.i)
+    .map(({ e, i }) => {
+      const r = e.review;
+      const why = r.issue ? ISSUES[r.issue].label : r.v.label;
+      return `<button class="moment" data-act="jump" data-ply="${i}"><span class="mv">${Math.floor(i / 2) + 1}${i % 2 ? '…' : '.'} ${esc(r.san)}</span><span class="why">${esc(why)} · lost ${Math.round(r.loss)}%${r.best ? ` · better ${esc(r.best.san)}` : ''}</span><span>›</span></button>`;
+    }).join('');
+
+  const issues = {}; mine.forEach(({ e }) => { if (e.review.issue) issues[e.review.issue] = (issues[e.review.issue] || 0) + 1; });
+  const top = Object.entries(issues).sort((a, b) => b[1] - a[1]);
+  return `<div class="card" data-key="report"><h3>📋 Game report · ${res}</h3>
+    ${pending ? '<p class="small muted">Finishing analysis of your last move…</p>' : ''}
+    ${mine.length ? graph : ''}
+    <div class="stats"><div><b>${count(['best', 'good'])}</b><span>good moves</span></div><div><b>${count(['inacc'])}</b><span>inaccuracies</span></div><div><b>${count(['mistake'])}</b><span>mistakes</span></div><div><b>${count(['blunder'])}</b><span>blunders</span></div></div>
+    <p class="small muted">On average you gave away ${avg.toFixed(1)}% winning chance per move${avg < 3 ? ' — very solid.' : avg < 7 ? '.' : ' — the key moments below are where it went.'}</p>
+    ${moments ? `<p style="margin-bottom:0"><b>Key moments</b></p>${moments}` : '<p>No big mistakes this game. 👏</p>'}
+    ${top.length ? `<p style="margin:12px 0 4px"><b>What to work on</b></p><p>${top.map(([k, c]) => `<span class="tag issue-tag">${esc(ISSUES[k].label)} × ${c}</span>`).join(' ')}</p><p class="small muted">${esc(ISSUES[top[0][0]].tip)}</p>` : ''}
+    <div class="row-btns"><button data-act="new" class="primary">New game</button>${top.length ? `<button data-act="issue" data-issue="${top[0][0]}">Practice: ${esc(ISSUES[top[0][0]].label)}</button>` : ''}</div></div>`;
 }
 
 function hintCard() {
@@ -583,7 +735,7 @@ $('#coach').addEventListener('click', (e) => {
   if (!btn) return;
   const act = btn.dataset.act;
   const ply = btn.dataset.ply != null ? Number(btn.dataset.ply) : null;
-  const r = ply != null ? st.log[ply].review : st.review;
+  const r = ply != null ? st.log[ply]?.review : st.review;
   switch (act) {
     case 'quiz-none': answerQuiz('none'); break;
     case 'quiz-skip': st.quiz.answered = true; st.quiz.pick = 'skip'; refresh(); renderCoach(); break;
@@ -591,13 +743,16 @@ $('#coach').addEventListener('click', (e) => {
     case 'idea-refute': openPreview(r.fenAfter, r.refutePv, `How they punish ${r.san}`); break;
     case 'idea-now': openPreview(st.game.fen(), st.analysis.lines[0].pv, 'The engine\'s line'); break;
     case 'idea-drill': engine.analyse(st.drill.fen, { depth: settings.depth }).then((a) => openPreview(st.drill.fen, a.lines[0]?.pv || [st.drill.best], `The idea: ${st.drill.bestSan}`)); break;
-    case 'pv-prev': st.preview.idx--; refresh(); renderCoach(); break;
-    case 'pv-next': st.preview.idx++; refresh(); renderCoach(); break;
-    case 'pv-close': st.preview = null; board.prevBoard = null; refresh(); renderCoach(); break;
+    case 'pv-prev': previewStep(-1); break;
+    case 'pv-next': previewStep(1); break;
+    case 'pv-toggle': previewToggle(); break;
+    case 'pv-close': closePreview(); refresh(); renderCoach(); break;
+    case 'continue': continueGame(); break;
+    case 'jump': goTo(ply); break;
     case 'live': goLive(); break;
     case 'next-drill': nextDrill(); break;
     case 'pick-issue': openDrills(undefined); break;
-    case 'issue': openDrills(btn.dataset.issue || null); break;
+    case 'issue': setTab('drills', btn.dataset.issue || null); break;
     case 'back-game': case 'new': setTab('play'); newGame(); break;
     case 'drills': setTab('drills'); break;
   }
@@ -670,7 +825,7 @@ function resumeGame() {
   st.myColor = g.myColor; st.log = g.log || []; st.review = g.review; st.opp = g.opp;
   board.orientation = st.myColor;
   board.prevBoard = null;
-  if (st.game.turn() === st.myColor || st.game.isGameOver()) startMyTurn(); else opponentMove(PAUSE_FIRST_MOVE);
+  if (st.game.turn() === st.myColor || over()) startMyTurn(); else opponentMove(PAUSE_FIRST_MOVE);
 }
 document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 document.querySelectorAll('#layers .chip').forEach((c) => c.addEventListener('click', () => {
@@ -678,13 +833,21 @@ document.querySelectorAll('#layers .chip').forEach((c) => c.addEventListener('cl
 }));
 $('#btn-hint').addEventListener('click', () => { st.hint = Math.min(4, st.hint + 1); if (st.quiz && !st.quiz.answered) { st.quiz.answered = true; st.quiz.pick = 'skip'; } refresh(); renderCoach(); });
 $('#btn-undo').addEventListener('click', takeBack);
-$('#btn-new').addEventListener('click', () => { if (st.mode === 'drill') setTab('play'); else if (!st.busy || st.game.isGameOver()) newGame(); });
+document.querySelectorAll('#mode button').forEach((b) => b.addEventListener('click', () => {
+  if (settings.mode === b.dataset.mode) return;
+  settings.mode = b.dataset.mode; saveSettings();
+  st.quiz = null; st.hint = 0;
+  // Switching to Play while the bot was waiting on you: let it move.
+  if (!learning() && st.awaitingContinue) { continueGame(); return; }
+  refresh(); renderCoach();
+}));
+$('#btn-new').addEventListener('click', () => { if (st.mode === 'drill') setTab('play'); else if (!st.busy || over()) newGame(); });
 $('#btn-back').addEventListener('click', () => goTo(curPly() - 1));
 $('#btn-fwd').addEventListener('click', () => goTo(curPly() + 1));
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input,select,textarea,dialog')) return;
-  if (e.key === 'ArrowLeft') { e.preventDefault(); if (st.preview) { if (st.preview.idx > 0) { st.preview.idx--; refresh(); renderCoach(); } } else goTo(curPly() - 1); }
-  if (e.key === 'ArrowRight') { e.preventDefault(); if (st.preview) { if (st.preview.idx < st.preview.sans.length) { st.preview.idx++; refresh(); renderCoach(); } } else if (st.view != null) goTo(curPly() + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); if (st.preview) previewStep(-1); else goTo(curPly() - 1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); if (st.preview) previewStep(1); else if (st.view != null) goTo(curPly() + 1); }
 });
 
 // ---------- settings + model ----------

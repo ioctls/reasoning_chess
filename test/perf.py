@@ -19,7 +19,7 @@ with sync_playwright() as p:
         box=pg.locator('#board svg').bounding_box(); f='abcdefgh'.index(sq[0]); r=int(sq[1])-1
         pg.mouse.click(box['x']+(f+.5)*box['width']/8, box['y']+(7-r+.5)*box['height']/8)
     for frm,to in [('e2','e4'),('g1','f3'),('f1','c4'),('b1','c3')]:
-        pg.wait_for_function('!window.__gym.st.busy && window.__gym.st.game.turn()==="w"', timeout=120000)
+        pg.wait_for_function('(window.__gym.st.awaitingContinue && document.querySelector("[data-act=continue]").click(), !window.__gym.st.busy && window.__gym.st.game.turn()==="w")', timeout=120000)
         if pg.evaluate('!!(window.__gym.st.quiz && !window.__gym.st.quiz.answered)'): pg.click('[data-act=quiz-skip]')
         if not pg.evaluate(f'window.__gym.st.game.moves({{verbose:true}}).some(m=>m.from==="{frm}"&&m.to==="{to}")'):
             mv=pg.evaluate('window.__gym.st.game.moves({verbose:true})[0]'); frm,to=mv['from'],mv['to']

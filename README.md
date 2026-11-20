@@ -8,11 +8,13 @@ A chess trainer for building intuition, not memorizing openings. Everything runs
 
 ## Training loops
 
+Two modes: **Learn** gives feedback after every move, and the bot waits until you tap *Continue*. **Play** gives no help during the game, then a full report at the end (eval graph, key moments, issues to work on).
+
 | Feature | What it trains |
 |---|---|
 | Threat check | Before each move, tap what the opponent's last move is after. Uses a "free move" (null-move) search to find their real idea. |
 | Move review | Verdict (win % lost), the human-vs-engine quadrant (*hidden gem*, *natural*, *common trap*, *off-track*), why the better move works, and how they'd punish yours. |
-| 👁 Idea preview | Step through the engine's line move by move, with numbered arrows and a note on what each move attacks. |
+| 👁 Idea preview | Auto-plays the engine's line with the eval bar following along. Pause, step back and forward. Numbered arrows and a note on what each move attacks. |
 | Hint ladder | 4 steps: scan forcing moves → which piece → which idea → the move. |
 | Layers | Threats (your loose pieces), Control (who owns each square), Engine plan, Humans (Maia's top moves). |
 | Replay | ◀ ▶ (or arrow keys, or tap a move) to step back through the game. Each of your moves keeps its review. |

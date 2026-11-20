@@ -110,3 +110,26 @@ dialog::backdrop { background: rgba(0,0,0,.55); }
 .issue .t { font-weight: 600; }
 .issue .d { font-size: 12px; color: var(--muted); }
 .tag.issue-tag { background: color-mix(in srgb, var(--meh) 22%, transparent); color: #fcd34d; }
+
+/* Learn / Play switch */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-right: 4px; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 5px 12px; }
+.seg button.on { background: var(--you); color: #fff; }
+.play-mode .chip { display: none; }
+.continue { width: 100%; margin-top: 10px; padding: 12px; font-size: 16px; }
+
+/* Report */
+.report-graph { position: relative; height: 150px; margin: 8px 0 4px; }
+.report-graph svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0; text-align: center; }
+.stats div { background: var(--panel2); border-radius: 8px; padding: 6px 2px; }
+.stats b { display: block; font-size: 20px; }
+.stats span { font-size: 11px; color: var(--muted); }
+.moment { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; margin-top: 6px; }
+.moment .mv { font-weight: 700; min-width: 64px; }
+.moment .why { flex: 1; font-size: 13px; color: var(--muted); }
+
+/* Line preview */
+.evalchip { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--panel2); color: var(--muted); margin-left: 4px; }
+.evalchip.up { color: #86efac; } .evalchip.down { color: #fca5a5; }
+.pv-controls button { min-width: 48px; }

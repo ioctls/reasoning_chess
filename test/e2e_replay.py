@@ -15,7 +15,7 @@ with sync_playwright() as p:
         pg.mouse.click(box['x']+(f+.5)*box['width']/8, box['y']+(7-r+.5)*box['height']/8)
     anims=[]
     for frm,to in [('e2','e4'),('d1','h5'),('h5','f7'),('g1','f3'),('b1','c3')]:
-        pg.wait_for_function('!window.__gym.st.busy && window.__gym.st.game.turn()==="w"', timeout=60000)
+        pg.wait_for_function('(window.__gym.st.awaitingContinue && document.querySelector("[data-act=continue]").click(), !window.__gym.st.busy && window.__gym.st.game.turn()==="w")', timeout=60000)
         if pg.evaluate('!!(window.__gym.st.quiz && !window.__gym.st.quiz.answered)'): pg.click('[data-act=quiz-skip]')
         legal = pg.evaluate(f'window.__gym.st.game.moves({{verbose:true}}).some(m=>m.from==="{frm}"&&m.to==="{to}")')
         if not legal:
@@ -25,7 +25,7 @@ with sync_playwright() as p:
         anims.append(pg.evaluate("document.querySelector('#board svg').getAnimations({subtree:true}).length"))
         pg.wait_for_function('window.__gym.st.review && !window.__gym.st.review.pending', timeout=60000)
         r = pg.evaluate('window.__gym.st.review'); print(f'{frm}{to}', r['san'], r['v']['label'], 'issue=', r.get('issue'))
-    pg.wait_for_function('!window.__gym.st.busy', timeout=60000); time.sleep(1)
+    pg.wait_for_function('(window.__gym.st.awaitingContinue && document.querySelector("[data-act=continue]").click(), !window.__gym.st.busy)', timeout=60000); time.sleep(1)
     print('animations running right after each move:', anims)
     n = pg.evaluate('window.__gym.st.log.length'); print('log length', n)
     for _ in range(3): pg.click('#btn-back'); time.sleep(0.35)
