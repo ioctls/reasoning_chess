@@ -37,3 +37,12 @@ python3 test/make_dummy.py && python3 test/e2e.py           # full browser run w
 ## Licenses
 
 AGPL-3.0. Maia-3 (CSSLab, AGPL-3.0) and Stockfish (GPL-3.0) are both GPL-family licenses. Pieces: cburnett set (via chessground, GPL). chess.js: BSD-2. onnxruntime-web: MIT.
+
+## Android app
+
+`android/` is a small WebView wrapper. It serves the same files from `https://appassets.androidplatform.net/`, so modules, workers, WASM and the model cache all work offline.
+
+- **Built for you:** every push to `main` runs `.github/workflows/android.yml`. It builds the APK and attaches it to the **latest** release (Releases → Latest build → `chess-gym.apk`).
+- **Local build** (needs the Android SDK): `gradle -p android assembleDebug`
+
+It's a debug-signed build. Android will ask you to allow installs from your browser or file manager the first time.

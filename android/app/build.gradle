@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The web app (index.html, js/, vendor/ ...) lives at the repo root.
+// It is copied into the APK's assets at build time, so there's one source of truth.
+def webAssets = layout.buildDirectory.dir('webassets').get().asFile
+
+tasks.register('copyWebApp', Copy) {
+    from(rootProject.projectDir.parentFile) {
+        include 'index.html', 'styles.css', 'js/**', 'vendor/**', 'LICENSE'
+    }
+    into webAssets
+}
+
+android {
+    namespace 'com.shantanu.chessgym'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.shantanu.chessgym'
+        minSdk 26
+        targetSdk 34   // 35 forces edge-to-edge, which would push the page under the status bar
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    sourceSets {
+        main {
+            assets.srcDir(webAssets)
+        }
+    }
+
+    androidResources {
+        noCompress += ['wasm', 'onnx']
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
+
+tasks.named('preBuild') { dependsOn 'copyWebApp' }
