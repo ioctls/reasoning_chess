@@ -6,7 +6,7 @@ import { Chess } from '../vendor/chess/chess.js';
 import { encodeBoard, legalMoveIndices, legalPolicy } from '../js/maia-encode.js';
 const model = process.argv[2] || 'models/maia3-5m.fp16.onnx';
 const ref = JSON.parse(fs.readFileSync(process.argv[3] || 'ref.json', 'utf8'));
-const s = await ort.InferenceSession.create(model);
+const s = await ort.InferenceSession.create(model, { graphOptimizationLevel: 'basic' }); // same as the app
 let bad = 0;
 for (const r of ref) {
   const c = new Chess(r.fen);

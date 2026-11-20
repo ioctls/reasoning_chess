@@ -27,7 +27,9 @@ FENS = [chess.STARTING_FEN,
         'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1',
         'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3',
         'r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4']
-s = ort.InferenceSession(MODEL)
+so = ort.SessionOptions()
+so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC  # same as the app; full fusion breaks on this fp16 graph
+s = ort.InferenceSession(MODEL, so)
 print('inputs', [(i.name, i.shape) for i in s.get_inputs()], 'outputs', [o.name for o in s.get_outputs()], file=sys.stderr)
 res = []
 for fen in FENS:
