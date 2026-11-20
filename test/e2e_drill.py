@@ -7,7 +7,7 @@ with sync_playwright() as p:
     pg.on('pageerror', lambda e: errs.append(str(e)))
     pg.on('console', lambda m: errs.append(m.text) if m.type=='error' else None)
     pg.goto('http://localhost:8766/index.html')
-    pg.evaluate("""localStorage.setItem('chessgym.profile.v1', JSON.stringify({drills:[{id:1,fen:'r3k3/8/8/3N4/8/8/8/4K3 w - - 0 1',best:'d5c7',bestSan:'Nc7+',kinds:['check','fork'],mySan:'Ke2',box:0,due:0}]}))""")
+    pg.evaluate("""localStorage.setItem('reasonablechess.profile.v1', JSON.stringify({drills:[{id:1,fen:'r3k3/8/8/3N4/8/8/8/4K3 w - - 0 1',best:'d5c7',bestSan:'Nc7+',kinds:['check','fork'],mySan:'Ke2',box:0,due:0}]}))""")
     pg.reload()
     pg.wait_for_function('window.__gym && window.__gym.st.analysis', timeout=60000)
     pg.click('.tabs [data-tab=drills]')

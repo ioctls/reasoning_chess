@@ -26,12 +26,12 @@ jobs:
         run: gradle -p android assembleDebug
 
       - name: Rename
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk chess-gym.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk reasonable-chess.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: chess-gym-apk
-          path: chess-gym.apk
+          name: reasonable-chess-apk
+          path: reasonable-chess.apk
 
       # Keep the "latest" tag pointing at the commit this APK was built from.
       - name: Move latest tag
@@ -39,10 +39,10 @@ jobs:
           git tag -f latest
           git push -f origin refs/tags/latest
 
-      # A stable download link for your phone: Releases -> "latest" -> chess-gym.apk
+      # A stable download link for your phone: Releases -> "latest" -> reasonable-chess.apk
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest build
           prerelease: true
-          files: chess-gym.apk
+          files: reasonable-chess.apk

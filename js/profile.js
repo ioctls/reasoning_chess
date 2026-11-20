@@ -1,7 +1,7 @@
 // Your play-style profile and mistake drills, stored on this device (localStorage).
 import { ISSUES, issueOfDrill } from './issues.js';
 
-const KEY = 'chessgym.profile.v1';
+const KEY = 'reasonablechess.profile.v1';
 export const ELO_GRID = [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400];
 
 const blank = () => ({

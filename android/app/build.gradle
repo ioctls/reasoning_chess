@@ -14,11 +14,11 @@ tasks.register('copyWebApp', Copy) {
 }
 
 android {
-    namespace 'com.shantanu.chessgym'
+    namespace 'com.ioctls.reasonablechess'
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.shantanu.chessgym'
+        applicationId 'com.ioctls.reasonablechess'
         minSdk 26
         targetSdk 34   // 35 forces edge-to-edge, which would push the page under the status bar
         versionCode 1

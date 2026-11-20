@@ -133,3 +133,14 @@ dialog::backdrop { background: rgba(0,0,0,.55); }
 .evalchip { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--panel2); color: var(--muted); margin-left: 4px; }
 .evalchip.up { color: #86efac; } .evalchip.down { color: #fca5a5; }
 .pv-controls button { min-width: 48px; }
+
+/* Narrow phones: keep the name, tabs and settings on one line */
+.brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.top > .icon { flex: none; }
+@media (max-width: 400px) {
+  .top { gap: 6px; padding-left: 10px; padding-right: 10px; }
+  .brand { font-size: 13px; }
+  .tabs { gap: 0; }
+  .tabs button { padding: 6px 7px; font-size: 13px; }
+  .icon { padding: 6px 8px; }
+}

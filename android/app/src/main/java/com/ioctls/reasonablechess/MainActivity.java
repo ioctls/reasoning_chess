@@ -1,4 +1,4 @@
-package com.shantanu.chessgym;
+package com.ioctls.reasonablechess;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -17,7 +17,7 @@ import androidx.webkit.WebViewAssetLoader;
 import java.io.IOException;
 
 /**
- * Hosts the Chess Gym web app in a WebView.
+ * Hosts the Reasonable Chess web app in a WebView.
  *
  * The bundled files are served from https://appassets.androidplatform.net/ rather than file://,
  * because ES modules, Web Workers, fetch() of .wasm files and the Cache API all need a proper

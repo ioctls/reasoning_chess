@@ -25,7 +25,7 @@ const PAUSE_BEFORE_REPLY = 900;   // after your move: watch it land and read the
 const PAUSE_FIRST_MOVE = 500;
 
 // ---------- settings ----------
-const SKEY = 'chessgym.settings.v1';
+const SKEY = 'reasonablechess.settings.v1';
 let stored = {};
 try { stored = JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { /* ignore */ }
 const settings = Object.assign(

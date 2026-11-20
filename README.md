@@ -1,4 +1,4 @@
-# Chess Gym
+# Reasonable Chess
 
 A chess trainer for building intuition, not memorizing openings. Everything runs in the browser, on-device.
 
@@ -46,7 +46,7 @@ AGPL-3.0. Maia-3 (CSSLab, AGPL-3.0) and Stockfish (GPL-3.0) are both GPL-family 
 
 `android/` is a small WebView wrapper. It serves the same files from `https://appassets.androidplatform.net/`, so modules, workers, WASM and the model cache all work offline.
 
-- **Built for you:** every push to `main` runs `.github/workflows/android.yml`. It builds the APK and attaches it to the **latest** release (Releases → Latest build → `chess-gym.apk`).
+- **Built for you:** every push to `main` runs `.github/workflows/android.yml`. It builds the APK and attaches it to the **latest** release (Releases → Latest build → `reasonable-chess.apk`).
 - **Local build** (needs the Android SDK): `gradle -p android assembleDebug`
 
 It's a debug-signed build. Android will ask you to allow installs from your browser or file manager the first time.

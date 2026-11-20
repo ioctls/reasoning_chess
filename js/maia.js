@@ -6,7 +6,7 @@ import * as ort from '../vendor/ort/ort.wasm.min.mjs';
 import { encodeBoard, legalMoveIndices, legalPolicy, wdlFromLogits, VOCAB_SIZE } from './maia-encode.js';
 
 export const DEFAULT_MODEL_URL = 'https://huggingface.co/bqrio/maia3-onnx/resolve/main/maia3-5m.fp16.onnx';
-const CACHE = 'chess-gym-models-v1';
+const CACHE = 'reasonable-chess-models-v1';
 
 ort.env.wasm.wasmPaths = new URL('../vendor/ort/', import.meta.url).href;
 ort.env.wasm.numThreads = 1;
