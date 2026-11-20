@@ -507,7 +507,11 @@ function renderStyle() {
 $('#view-style').addEventListener('click', (e) => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'drills') setTab('drills');
-  if (act === 'reset-profile' && confirm('Reset all stats and drills on this device?')) { profile = resetProfile(); renderStyle(); }
+  if (act === 'reset-profile') {
+    const b = e.target.closest('button');
+    if (b.dataset.armed) { profile = resetProfile(); renderStyle(); } // pop-ups are blocked in some hosts, so confirm with a second tap
+    else { b.dataset.armed = '1'; b.textContent = 'Tap again to erase stats & drills'; }
+  }
 });
 
 // ---------- tabs, layers, buttons ----------
