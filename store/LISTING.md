@@ -49,4 +49,4 @@ PRIVATE BY DESIGN
 **Graphics** (in this folder):
 - App icon 512×512: `icon-512.png`
 - Feature graphic 1024×500: `feature-graphic.png`
-- Phone screenshots 1080×1920: `screenshots/1-…png` through `screenshots/6-…png`
+- Phone screenshots 1080×1920: everything in `screenshots/`, in file-name order

@@ -82,7 +82,7 @@ jobs:
           rm -f "$RUNNER_TEMP/upload.jks"
           cp android/app/build/outputs/bundle/release/app-release.aab reasonable-chess.aab
           cp android/app/build/outputs/apk/release/app-release.apk reasonable-chess.apk
-      - name: No upload key yet: ship the debug APK
+      - name: "No upload key yet: ship the debug APK"
         if: env.HAS_UPLOAD_KEY != 'true'
         run: cp android/app/build/outputs/apk/debug/app-debug.apk reasonable-chess.apk
 
